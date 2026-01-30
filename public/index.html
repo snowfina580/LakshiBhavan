@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Lakshmi Bhavan — Ready Orders (Admin)</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <script src="/socket.io/socket.io.js"></script>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#0b6efd">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+
+  </head>
+  <body>
+    <header class="header">
+      <img src="logo.png" alt="Lakshmi Bhavan logo" class="logo">
+    </header>
+
+    <div class="container" style="max-width:1000px">
+        <div class="card">
+          <h3>Mark Order Ready</h3>
+          <div class="input-row">
+            <input id="orderInput" placeholder="Order number" autocomplete="off" />
+            <button id="sendBtn" class="btn" style="width:80px;height:50px;padding:5px">Ready</button>
+          </div>
+          <div style="margin-top:12px">
+            <input id="noteInput" placeholder="Optional note" style="padding:10px;border-radius:8px;border:1px solid #eee;width:90%" />
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px">
+            <div class="small">Ready Orders</div>
+            <button id="clearBtn" class="btn" style="background:#c35400;width:80px;height:50px;padding:5px">Clear All</button>
+          </div>
+          <div class="recent-list" id="recent"></div>
+        </div>
+    </div>
+
+    <script>
+      const socket = io();
+      const orderInput = document.getElementById('orderInput');
+      const noteInput = document.getElementById('noteInput');
+      const sendBtn = document.getElementById('sendBtn');
+      const recent = document.getElementById('recent');
+      const clearBtn = document.getElementById('clearBtn');
+
+      const addRecent = (o) => {
+        const el = document.createElement('div');
+        el.className = 'recent-item';
+        // store id for deletes
+        el.dataset.id = o.id || '';
+        const left = document.createElement('div');
+        left.innerHTML = `<strong>${o.order}</strong> ${o.note ? ' — '+o.note : ''}`;
+        const right = document.createElement('div');
+        right.className = 'small';
+        right.textContent = new Date(o.ts).toLocaleTimeString();
+
+        const delBtn = document.createElement('button');
+        delBtn.textContent = 'Delete';
+        delBtn.className = 'btn';
+        delBtn.style.background = '#aa2d00';
+        delBtn.style.marginLeft = '12px';
+        delBtn.addEventListener('click', ()=>{
+          // emit remove-order by id when available
+          const id = el.dataset.id;
+          if(id) socket.emit('remove-order', { id });
+          else socket.emit('remove-order', { order: o.order });
+          // remove from local recent list immediately
+          if(el.parentNode) el.parentNode.removeChild(el);
+        });
+
+        const container = document.createElement('div');
+        container.style.display = 'flex';
+        container.style.alignItems = 'center';
+        container.appendChild(right);
+        container.appendChild(delBtn);
+
+        el.appendChild(left);
+        el.appendChild(container);
+
+        recent.prepend(el);
+        // keep only last 12
+        while(recent.children.length>50) recent.removeChild(recent.lastChild);
+      }
+      sendBtn.addEventListener('click', () => {
+        const order = orderInput.value.trim();
+        const note = noteInput.value.trim();
+        if(!order) return orderInput.focus();
+        const payload = { order, note };
+        socket.emit('ready-order', payload);
+        orderInput.value=''; noteInput.value='';
+      });
+
+      socket.on('ready-order', (payload)=>{
+        // payload now contains canonical { id, order, note, ts }
+        addRecent(payload);
+      });
+
+      // When connecting we may receive an initial set of orders
+      socket.on('init-orders', (list)=>{
+        // list is newest-first; add them visually (avoid duplicates)
+        const existing = new Set(Array.from(recent.querySelectorAll('.recent-item')).map(n=>n.dataset.id));
+        list.forEach(item=>{ if(!existing.has(item.id)) addRecent(item); });
+      });
+
+      clearBtn.addEventListener('click', ()=>{ 
+        // emit remove for all recent orders so displays clear them too
+        Array.from(recent.querySelectorAll('.recent-item')).forEach(item=>{
+          const orderText = item.querySelector('strong')?.textContent?.trim();
+          if(orderText) socket.emit('remove-order',{ order: orderText });
+        });
+        recent.innerHTML='';
+      });
+
+      // Enter key support
+      orderInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter') sendBtn.click(); });
+    </script>
+
+    <script>
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/service-worker.js');
+      }
+    </script>
+  </body>
+</html>

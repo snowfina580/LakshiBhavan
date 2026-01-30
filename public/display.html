@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Lakshmi Bhavan — Ready Orders (Display)</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <script src="/socket.io/socket.io.js"></script>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#0b6efd">
+
+  </head>
+  <body>
+    <header class="header">
+      <img src="logo.png" alt="Lakshmi Bhavan logo" class="logo">
+    </header>
+
+    <div class="tv-wrap">
+      <div class="tv-body">
+        <div class="order-grid" id="orders"></div>
+      </div>
+    </div>
+
+    <script>
+      const socket = io();
+      const ordersEl = document.getElementById('orders');
+      const maxShown = 20;
+
+      function renderOrder(o){
+        const el = document.createElement('div');
+        el.className = 'order-card flash';
+        // attach id for later removal
+        if(o.id) el.dataset.id = o.id;
+        el.innerHTML = `
+          <div>
+            <div class="order-num">${o.order}</div>
+          </div>
+          <div class="order-meta">
+            <div class="note">${o.note ? o.note : ''}</div>
+            <div class="small">${new Date(o.ts).toLocaleTimeString()}</div>
+          </div>`;
+        return el;
+      }
+
+      socket.on('ready-order', (payload)=>{
+        const node = renderOrder(payload);
+        ordersEl.prepend(node);
+        // limit
+        while(ordersEl.children.length>maxShown) ordersEl.removeChild(ordersEl.lastChild);
+        // simple sound
+        try{ new Audio('/sounds/chime.mp3').play().catch(()=>{}); }catch(e){}
+      });
+
+      // receive initial orders on connect (newest-first)
+      socket.on('init-orders', (list)=>{
+        // clear existing and render initial list
+        ordersEl.innerHTML = '';
+        list.forEach(item=>{
+          const n = renderOrder(item);
+          ordersEl.appendChild(n);
+        });
+      });
+
+      // remove orders when admin deletes/cancels them
+      socket.on('remove-order', (payload)=>{
+        const id = payload && payload.id ? payload.id : null;
+        const orderText = payload && payload.order ? String(payload.order).trim() : null;
+        const nodes = Array.from(ordersEl.querySelectorAll('.order-card'));
+        nodes.forEach(node=>{
+          const nodeId = node.dataset.id;
+          const num = node.querySelector('.order-num')?.textContent?.trim();
+          if((id && nodeId === id) || (!id && orderText && num === orderText)){
+            node.classList.add('fadeout');
+            setTimeout(()=>{ if(node.parentNode) node.parentNode.removeChild(node); }, 350);
+          }
+        });
+      });
+      
+      // Auto fullscreen on TV
+function goFullscreen() {
+  const el = document.documentElement;
+  if (el.requestFullscreen) el.requestFullscreen();
+  else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+}
+
+// Try fullscreen on first user interaction
+document.addEventListener('click', goFullscreen, { once: true });
+
+// Prevent screen sleep (supported TVs/browsers)
+let wakeLock = null;
+if ('wakeLock' in navigator) {
+  navigator.wakeLock.request('screen').then(lock => wakeLock = lock).catch(()=>{});
+}
+
+      // optional: fetch a small bootstrap state if needed in future
+    </script>
+
+    <script>
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/service-worker.js');
+      }
+    </script>
+  </body>
+</html>
